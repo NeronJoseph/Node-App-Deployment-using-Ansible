@@ -1,0 +1,112 @@
+### Install Docker Engine on the Target Server
+-
+  name: Install required packages on Target Server
+  hosts: web_server
+  tasks:
+    -
+      name: Update apt package
+      become: true
+      apt:
+        update_cache: yes
+
+    -
+      name: Install dependent packages
+      become: true
+      apt:
+        pkg:
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state:  present
+        update_cache: yes
+
+    -
+      name: Add Docker GPG apt Key
+      become: true
+      apt_key:
+        url:  https://download.docker.com/linux/ubuntu/gpg 
+        state: present
+
+    - 
+      name: Add Docker Repository URL
+      become: true
+      apt_repository:
+        repo: deb https://download.docker.com/linux/ubuntu focal stable
+        state: present
+
+    - 
+      name: Update apt and install docker-ce packages
+      become: true
+      apt:
+        pkg:
+          - docker-ce
+          - docker-ce-cli 
+          - containerd.io 
+          - docker-compose-plugin
+        state: latest
+        update_cache: true
+
+    - 
+      name: Adding user to docker group
+      command: "usermod -aG docker ubuntu"
+      become: true
+
+    - 
+      name: reset ssh connection to allow user changes to affect ansible user
+      meta: reset_connection
+
+### Install Docker Compose on the Target Machine
+-
+  name: Install Docker Compose on the Target Machine
+  hosts: web_server
+  tasks:
+    - 
+      name: install pip3
+      become: true
+      apt: 
+        name: python3-pip 
+        state: present
+
+    - 
+      name: Install Python Docker-Compose
+      become: false
+      pip:
+        name: docker-compose
+
+### Deploy Application to the Target Machine
+-
+  name: Deploy Application to Target Server
+  hosts: web_server
+  environment: 
+    APP_PORT: '{{ application_port }}'
+  tasks:
+    - 
+      name: Copy the application source code to the remote machine
+      tags: sync-push
+      become: false
+      synchronize:
+        src: "./app"
+        dest: "."
+        mode: push
+      register: syncfile
+
+    - 
+      name: Copy Docker compose file
+      tags: sync-push
+      become: false
+      synchronize:
+        src: "docker-compose.yml"
+        dest: "."
+        mode: push
+      register: syncfile
+
+    - 
+      name: Create and start services
+      docker_compose:
+        project_src: .
+        files:
+        - docker-compose.yml
+        build: yes
+      become: false
+      register: output
